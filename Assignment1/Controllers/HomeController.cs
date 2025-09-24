@@ -1,17 +1,12 @@
-using System.Diagnostics;
-using Assignment1.Models;
-using Microsoft.AspNetCore.Mvc;
+// I, Manh Truong Nguyen, student number 000893836, certify that this material is my
+// original work. No other person's work has been used without due
+// acknowledgement and I have not made my work available to anyone else.
 
 namespace Assignment1.Controllers
 {
-    public class HomeController : Controller
+    public class HomeController(ILogger<HomeController> logger) : Controller
     {
-        private readonly ILogger<HomeController> _logger;
-
-        public HomeController(ILogger<HomeController> logger)
-        {
-            _logger = logger;
-        }
+        private readonly ILogger<HomeController> _logger = logger;
 
         public IActionResult Index()
         {

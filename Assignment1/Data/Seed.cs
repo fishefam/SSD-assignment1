@@ -6,55 +6,64 @@
     public static class Seed
     {
         /// <summary>
-        /// Ensures the required roles (Supervisor, Employee) exist and creates one user for each role.
+        /// Ensures the required roles exist and creates seed users using configuration-backed credentials.
         /// </summary>
-        public static async Task SeedAsync(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+        public static async Task SeedAsync(
+            UserManager<ApplicationUser> userManager,
+            RoleManager<IdentityRole> roleManager,
+            IOptions<IdentitySeedOptions> seedOptions,
+            IWebHostEnvironment env // optional: to enforce stricter checks in Production
+        )
         {
             string[] roleNames = { "Supervisor", "Employee" };
 
             foreach (var roleName in roleNames)
             {
                 if (!await roleManager.RoleExistsAsync(roleName))
-                {
                     await roleManager.CreateAsync(new IdentityRole(roleName));
-                }
             }
 
-            if (await userManager.FindByEmailAsync("supervisor@test.com") == null)
+            var opts = seedOptions.Value;
+
+            // helper local function to seed a user if missing
+            static async Task CreateIfMissingAsync(UserManager<ApplicationUser> um, string email, string password, string role)
             {
-                var supervisor = new ApplicationUser
+                var existing = await um.FindByEmailAsync(email);
+                if (existing != null) return;
+
+                var user = new ApplicationUser
                 {
-                    UserName = "supervisor@test.com",
-                    Email = "supervisor@test.com",
-                    FirstName = "Super",
-                    LastName = "Visor",
+                    UserName = email,
+                    Email = email,
+                    FirstName = role == "Supervisor" ? "Super" : "Emp",
+                    LastName = role == "Supervisor" ? "Visor" : "Loyee",
                     EmailConfirmed = true
                 };
 
-                var result = await userManager.CreateAsync(supervisor, "Supervisor123!");
+                var result = await um.CreateAsync(user, password);
                 if (result.Succeeded)
-                {
-                    await userManager.AddToRoleAsync(supervisor, "Supervisor");
-                }
+                    await um.AddToRoleAsync(user, role);
+                else
+                    throw new InvalidOperationException(
+                        $"Failed to create seed user '{email}': {string.Join("; ", result.Errors.Select(e => e.Description))}");
             }
 
-            if (await userManager.FindByEmailAsync("employee@test.com") == null)
+            // Basic safety: don’t allow empty secrets in Production
+            if (env.IsProduction())
             {
-                var employee = new ApplicationUser
+                if (string.IsNullOrWhiteSpace(opts.SupervisorEmail) || string.IsNullOrWhiteSpace(opts.SupervisorPassword) ||
+                    string.IsNullOrWhiteSpace(opts.EmployeeEmail) || string.IsNullOrWhiteSpace(opts.EmployeePassword))
                 {
-                    UserName = "employee@test.com",
-                    Email = "employee@test.com",
-                    FirstName = "Emp",
-                    LastName = "Loyee",
-                    EmailConfirmed = true
-                };
-
-                var result = await userManager.CreateAsync(employee, "Employee123!");
-                if (result.Succeeded)
-                {
-                    await userManager.AddToRoleAsync(employee, "Employee");
+                    throw new InvalidOperationException(
+                        "Seed:Identity settings are missing in Production. Set environment variables (Seed__Identity__...).");
                 }
             }
+
+            if (!string.IsNullOrWhiteSpace(opts.SupervisorEmail) && !string.IsNullOrWhiteSpace(opts.SupervisorPassword))
+                await CreateIfMissingAsync(userManager, opts.SupervisorEmail, opts.SupervisorPassword, "Supervisor");
+
+            if (!string.IsNullOrWhiteSpace(opts.EmployeeEmail) && !string.IsNullOrWhiteSpace(opts.EmployeePassword))
+                await CreateIfMissingAsync(userManager, opts.EmployeeEmail, opts.EmployeePassword, "Employee");
         }
 
         /// <summary>
@@ -98,5 +107,13 @@
 
             await context.SaveChangesAsync();
         }
+    }
+
+    public class IdentitySeedOptions
+    {
+        public string SupervisorEmail { get; set; } = "";
+        public string SupervisorPassword { get; set; } = "";
+        public string EmployeeEmail { get; set; } = "";
+        public string EmployeePassword { get; set; } = "";
     }
 }
